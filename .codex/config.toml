@@ -1,0 +1,5 @@
+[mcp_servers.geo_research]
+command = "uv"
+args = ["run", "--locked", "python", "-m", "geo_connector"]
+env_vars = ["ZHIHU_ACCESS_SECRET", "BOCHA_API_KEY"]
+tool_timeout_sec = 180
