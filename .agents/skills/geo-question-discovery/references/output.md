@@ -1,13 +1,14 @@
 # 输出协议
 
-将 JSON 写入本次运行目录的 input.json，形状如下。
+在独立运行目录保留查询词、原始搜索结果和用于导出的 `input.json`。只写与题目核验有关的文字和链接。
 
-- industry 为行业名。
-- sources 是来源状态对象。每源至少说明 method 和 status，有查询日志时一并保留。
-- evidence 是记录列表。每条含 url、title、excerpt、source（zhihu 或 xiaohongshu）、method（zhihu_api、bocha_index、xhs_browser 或 host_web_search）、query。excerpt 用实际可获取的短片段。小红书站内记录带 evidence_kind，区分 title、search_snippet 和 body。知乎来源尽量保留官方链接参数。
-- questions 是候选问题列表。每条含 question、category、origin（explicit 或 inferred）、evidence_urls。显式问题的题干应出现在至少一条来源标题或片段中。归纳问题保留原始证据片段，由执行者判断是否支持题意。模型先做语义合并，导出器再做确定性校验。
+- `industry` 是本次研究主题，可以是品牌加背景或行业。 `entities` 可设置 `brand`（确切品牌名）、`competitors`（已确认名称列表），以及供报告保留的别名和背景。竞品点名需要题干实际出现已确认的名称。
+- `max_questions` 设为用户要求的数量；未指定时导出器默认上限 30。
+- `sources` 按平台记方法、查询、成功和失败数、原始与去重结果数。知乎记专栏数、回答数及唯一原问题数；小红书记标题、正文覆盖、评论样本。把原问、归纳、品牌点名原问、竞品点名原问分别统计。少量样本只能说明本轮覆盖。
+- `evidence` 每条含 `url`、`title`、`excerpt`、`source`、`method`、`query`。来源和方法使用连接器原值。小红书保留 `evidence_kind` 和 `comments`，其中评论为可见文字列表。合并同 URL 的证据时保留更完整的正文与去重评论。知乎答案作为原题标题的证据时可保留其 API 链接，清单中另提供父问题链接。
+- `questions` 每条含 `question`、`category`、`origin`（`explicit` 或 `inferred`）、`evidence_urls`。原问必须指定 `origin_location`（`title`、`body` 或 `comment`），知乎 API 返回的原问用 `title`。原话尽量保持完整，尤其不要把上下文中的品牌写进原题。如果对象只能从所处笔记识别，使用可选的 `context` 记录，例如「匹米替尼（笔记上下文）」。导出器按题干判断点名，引用的评论只从实际采样评论列表校验。
 
-在项目根目录执行以下命令。导出器拒绝无匹配证据的条目，合并同一品类的重复题干，输出 questions.csv 和 report.json。
+在项目根目录运行，得到 `questions.csv` 和 `report.json`：
 
 ```sh
 python3 -m geo_connector.report <运行目录>/input.json <运行目录>

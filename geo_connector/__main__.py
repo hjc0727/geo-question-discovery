@@ -124,11 +124,15 @@ async def search_sources(run_id: UUID, source: Literal["zhihu", "xiaohongshu"],
 
 
 @mcp.tool(structured_output=True)
-async def search_xiaohongshu_browser(queries: list[str], per_query_limit: int = 5) -> dict[str, Any]:
-    """Read visible Xiaohongshu notes in the project's local Chrome session."""
+async def search_xiaohongshu_browser(queries: list[str], per_query_limit: int = 5,
+                                    detail_limit: int = 2, include_comments: bool = False) -> dict[str, Any]:
+    """Read visible notes and optionally sample visible comments in local Chrome."""
     from .xhs_browser import browser_search, validate_queries
 
-    return await browser_search(validate_queries(queries, per_query_limit), per_query_limit)
+    return await browser_search(
+        validate_queries(queries, per_query_limit), per_query_limit,
+        detail_limit=detail_limit, include_comments=include_comments,
+    )
 
 
 if __name__ == "__main__":

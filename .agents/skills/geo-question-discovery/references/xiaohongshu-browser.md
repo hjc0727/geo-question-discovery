@@ -21,3 +21,11 @@ uv run --locked python -m geo_connector.xhs_browser search "通勤白衬衫" "�
 - browser_unavailable：检查 Chrome 是否已安装，关闭正在占用专用会话的窗口。
 - search_ui_unavailable 或 results_unavailable：检查站内页面是否能手动搜索，网页改版时更新选择器。
 - empty：页面明确显示无结果。换更短或更通用的词后再测。
+
+需要看正文和评论时，调用 `search_xiaohongshu_browser`，设置 `include_comments=true` 和 `detail_limit=3`，或使用：
+
+```sh
+uv run --locked python -m geo_connector.xhs_browser search "贝捷迈" "色绒 术后又肿" --limit 8 --detail-limit 3 --comments
+```
+
+`detail_limit` 每词 0–5，默认 2。评论采样只读取当前可见正文型笔记下最多 6 条已展示的评论文字，不展开评论线程。返回 `comments: []` 表示进行了采样但当时未读到；缺少该字段表示该笔记未采样。若连接器仍暴露旧工具参数，使用上面的 CLI。遇到登录时可开启专用窗口让用户登录，随后继续；站内无法使用时用博查或公开网页补查，并记录实际来源。

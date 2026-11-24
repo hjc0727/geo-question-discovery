@@ -34,18 +34,23 @@ class XhsBrowserTests(unittest.IsolatedAsyncioTestCase):
                     <h2 class="title">梨形身材怎么挑牛仔裤？</h2></a></section>
                     <section style="display:none"><a href="/explore/1{NOTE_ID[1:]}">隐藏笔记</a></section>"""
             elif f"/explore/{NOTE_ID}" in url:
-                html = '<p id="detail-desc">试了几条牛仔裤，腰合适的款式大腿又太紧。</p>'
+                html = '''<p id="detail-desc">试了几条牛仔裤，腰合适的款式大腿又太紧。</p>
+                    <div class="comment-item"><span class="content">还有别的颜色吗？</span></div>
+                    <div class="comment-item" hidden><span class="content">隐藏评论</span></div>'''
             else:
                 html = FORM
             await route.fulfill(status=200, content_type="text/html; charset=utf-8", body=html)
 
         await self.context.route("**/*", serve)
-        status, items = await search_query(self.page, self.detail, "梨形牛仔裤", 5)
+        status, items = await search_query(
+            self.page, self.detail, "梨形牛仔裤", 5, include_comments=True,
+        )
         self.assertEqual(status, "ok")
         note, = items
         self.assertEqual(note["evidence_kind"], "body")
         self.assertIn("大腿又太紧", note["excerpt"])
         self.assertNotIn("?", note["url"])
+        self.assertEqual(note["comments"], ["还有别的颜色吗？"])
         self.assertTrue(any("xsec_token=test" in url for url in seen))
         report = build_report({"industry": "服装", "sources": {"xiaohongshu": {"status": status}},
                                "evidence": items, "questions": [

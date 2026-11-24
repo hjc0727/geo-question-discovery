@@ -1,6 +1,6 @@
-# GEO 行业问题发现 Skill
+# GEO 品牌与行业问题发现 Skill
 
-输入行业名，例如「服装」，搜索知乎和小红书，从可追溯的内容中提取问题，合并重复问法，输出带证据和链接的 CSV。仓库包含 Codex Skill、本地 MCP 连接器和测试。
+输入品牌名称和产品或服务描述，或直接输入行业名。Skill 会从描述提取自然问法，扩展品牌及别名、已确认竞品及比较词，在知乎和小红书采集带来源的问题。仓库包含 Codex Skill、本地 MCP 连接器和测试。
 
 ## 使用
 
@@ -13,13 +13,13 @@
    uv run --locked python -m geo_connector.xhs_browser login
    ```
 
-5. 在 Codex 输入 `$geo-question-discovery 服装`。也可以单独试跑站内搜索：
+5. 在 Codex 输入 `$geo-question-discovery 品牌：示例品牌；产品或服务描述：面向小团队的在线项目管理工具；目标：50 条`。品牌官网、别名、产品列表和目标数量可按需提供。也可输入 `$geo-question-discovery 服装`，或单独试跑站内搜索：
 
    ```sh
-   uv run --locked python -m geo_connector.xhs_browser search "通勤白衬衫" "梨形牛仔裤" "冲锋衣软壳硬壳"
+   uv run --locked python -m geo_connector.xhs_browser search "通勤白衬衫" "梨形牛仔裤" "冲锋衣软壳硬壳" --detail-limit 3 --comments
    ```
 
-站内搜索读取浏览器可见的笔记。遇到登录、验证或访问限制时，工具会返回状态。输出可包含正文片段、搜索摘要或标题，并记录证据类型。
+站内搜索读取浏览器可见的笔记。遇到登录、验证或访问限制时，工具会返回状态。采集证据可包含标题、摘要、正文和可见评论。问题清单区分平台原问与归纳问法，并标注原问位置、品牌或竞品点名和来源链接。
 
 ## 测试
 

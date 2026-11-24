@@ -54,6 +54,11 @@ def normalize(source, item, query):
     key = identity(source, url)
     if not key or not title:
         return None
-    return {"id": key, "source": source, "url": url, "title": title[:300],
-            "excerpt": excerpt[:450], "content_type": content_type, "query": query,
-            "method": method}
+    record = {"id": key, "source": source, "url": url, "title": title[:300],
+              "excerpt": excerpt[:450], "content_type": content_type, "query": query,
+              "method": method}
+    if source == "zhihu":
+        parent = re.match(r"/question/(\d+)(?:/|$)", urlsplit(url).path)
+        if parent:
+            record["question_id"] = parent[1]
+    return record

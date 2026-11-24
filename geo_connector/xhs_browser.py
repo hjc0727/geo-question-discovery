@@ -19,6 +19,7 @@ LOGIN = '.login-container:visible, .login-modal:visible, [role="dialog"]:has-tex
 BLOCK = 'text=/访问受限|请求过于频繁|完成安全验证|请完成验证|Please verify/'
 EMPTY = 'text=/没有找到相关|没有搜索结果|暂无搜索结果|未找到相关|No results found/'
 DETAIL = '#detail-desc:visible, .note-content .desc:visible, .note-detail-mask .desc:visible'
+COMMENTS = '.comment-item .content:visible, .comment-inner-container .content:visible, .comments-container .comment-content:visible'
 
 
 def is_site(url):
@@ -95,7 +96,22 @@ async def read_detail(tab, href):
         return await gate(tab), "", ""
 
 
-async def search_query(page, detail, query, limit):
+async def visible_comments(tab):
+    comments = tab.locator(COMMENTS)
+    try:
+        await comments.first.wait_for(state="visible", timeout=1800)
+    except TimeoutError:
+        pass
+    status = await gate(tab)
+    if status:
+        return status, []
+    texts = await comments.evaluate_all(
+        "(nodes) => [...new Set(nodes.map(n => n.innerText.trim()).filter(Boolean))].slice(0, 6)"
+    )
+    return None, [clean(value)[:300] for value in texts if clean(value)]
+
+
+async def search_query(page, detail, query, limit, *, detail_limit=2, include_comments=False):
     try:
         response = await page.goto(HOME, wait_until="domcontentloaded", timeout=8_000)
         if response and response.status in (403, 429):
@@ -130,20 +146,28 @@ async def search_query(page, detail, query, limit):
             key, url = link
             title, excerpt = clean(row["title"]), clean(row["excerpt"])
             evidence_kind = "search_snippet" if excerpt else "title"
-            if not excerpt and detail_attempts < 2:
+            comments = None
+            if (not excerpt or include_comments) and detail_attempts < detail_limit:
                 detail_attempts += 1
                 href = urlsplit(row["href"])
                 detail_url = urlunsplit((href.scheme, href.netloc, urlsplit(url).path, href.query, ""))
-                blocked, detail_title, excerpt = await read_detail(detail, detail_url)
+                blocked, detail_title, body = await read_detail(detail, detail_url)
                 if blocked:
                     return blocked, list(result.values())
                 title = detail_title or title
-                if excerpt:
+                if body:
+                    excerpt = body
                     evidence_kind = "body"
+                    if include_comments:
+                        blocked, comments = await visible_comments(detail)
+                        if blocked:
+                            return blocked, list(result.values())
             if title:
                 result[key] = {"id": key, "source": SOURCE, "method": METHOD, "query": query,
                                "url": url, "title": title[:300], "excerpt": (excerpt or title)[:450],
                                "content_type": "note", "evidence_kind": evidence_kind}
+                if comments is not None:
+                    result[key]["comments"] = comments
             if len(result) >= limit:
                 break
         return ("ok" if result else "results_unavailable"), list(result.values())
@@ -156,7 +180,9 @@ def status_result(queries, error):
             "query_stats": [{"query": q, "status": error, "count": 0} for q in queries]}
 
 
-async def browser_search(queries, limit=5, *, profile=PROFILE):
+async def browser_search(queries, limit=5, *, profile=PROFILE, detail_limit=2, include_comments=False):
+    if not 0 <= detail_limit <= 5:
+        raise ValueError("每词最多打开 0–5 篇笔记正文。")
     if not profile.is_dir():
         return status_result(queries, "setup_required")
     try:
@@ -167,7 +193,10 @@ async def browser_search(queries, limit=5, *, profile=PROFILE):
                 detail = await context.new_page()
                 items, stats = {}, []
                 for query in queries:
-                    status, notes = await search_query(page, detail, query, limit)
+                    status, notes = await search_query(
+                        page, detail, query, limit, detail_limit=detail_limit,
+                        include_comments=include_comments,
+                    )
                     for note in notes:
                         items.setdefault(note["id"], note)
                     stats.append({"query": query, "status": status, "count": len(notes)})
@@ -213,6 +242,8 @@ def main():
     search = sub.add_parser("search", help="Search using the saved browser session")
     search.add_argument("queries", nargs="+")
     search.add_argument("--limit", type=int, default=5)
+    search.add_argument("--detail-limit", type=int, choices=range(6), default=2)
+    search.add_argument("--comments", action="store_true")
     args = parser.parse_args()
     if args.command == "login":
         try:
@@ -224,7 +255,10 @@ def main():
         queries = validate_queries(args.queries, args.limit)
     except ValueError as error:
         parser.error(str(error))
-    print(json.dumps(asyncio.run(browser_search(queries, args.limit)), ensure_ascii=False, indent=2))
+    result = asyncio.run(browser_search(
+        queries, args.limit, detail_limit=args.detail_limit, include_comments=args.comments,
+    ))
+    print(json.dumps(result, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":

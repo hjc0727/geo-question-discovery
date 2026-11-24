@@ -22,6 +22,7 @@ class PipelineTests(unittest.TestCase):
         status, rows = unpack("zhihu", response)
         self.assertEqual(status, "ok")
         self.assertEqual(normalize("zhihu", rows[0], "冲锋衣")["url"], QUESTION)
+        self.assertEqual(normalize("zhihu", rows[0], "冲锋衣")["question_id"], "1234")
         response = httpx.Response(200, json={"code": 200, "data": {"webPages": {"value": [
             {"name": "试穿体验", "snippet": "腰刚好但大腿紧", "url": f"https://www.xiaohongshu.com/explore/{NOTE}"}
         ]}}})
@@ -61,3 +62,22 @@ class PipelineTests(unittest.TestCase):
             with (path / "questions.csv").open(encoding="utf-8-sig", newline="") as stream:
                 row, = list(csv.DictReader(stream))
             self.assertEqual(row["来源链接"], QUESTION)
+
+    def test_brand_and_competitor_mentions_are_in_the_question(self):
+        url = f"https://www.xiaohongshu.com/explore/{NOTE}"
+        evidence = [{"url": url, "source": "xiaohongshu", "method": "xhs_browser",
+                     "title": "甲牌体验", "excerpt": "我买了甲牌。",
+                     "comments": ["哪里买这个？", "甲牌和乙牌怎么选？"]}]
+        questions = [
+            {"question": q, "category": "比较", "origin": "explicit",
+             "origin_location": "comment", "evidence_urls": [url]}
+            for q in ["哪里买这个？", "甲牌和乙牌怎么选？", "甲牌哪里买？"]
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            report = export({"industry": "甲牌", "sources": {}, "evidence": evidence,
+                             "entities": {"brand": "甲牌", "competitors": ["乙牌"]},
+                             "questions": questions, "max_questions": 50}, Path(directory))
+        self.assertEqual(report["question_count"], 2)
+        self.assertEqual(report["questions"][0]["mention_tags"], ["未点名"])
+        self.assertEqual(report["questions"][1]["mention_tags"], ["品牌点名", "竞品点名：乙牌"])
+        self.assertEqual(report["rejected"][0]["reason"], "explicit_text_not_found")
