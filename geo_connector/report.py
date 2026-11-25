@@ -33,6 +33,9 @@ def build_report(payload):
     if type(maximum) is not int or maximum < 1:
         raise ValueError("max_questions must be a positive integer")
     entities = payload.get("entities", {})
+    discovery = payload.get("discovery")
+    seeds = (discovery or {}).get("seeds", {})
+    seed_titles = {comparable(clean(value)) for value in seeds.values()}
     brand = clean(entities.get("brand"))
     competitors = [clean(value) for value in entities.get("competitors", []) if clean(value)]
     named_entities = [(brand, "品牌点名")]
@@ -42,7 +45,7 @@ def build_report(payload):
         source, url = raw["source"], raw["url"]
         key = identity(source, url)
         title, excerpt = clean(raw.get("title")), clean(raw.get("excerpt"))
-        if key and raw.get("method") in METHODS[source] and title and excerpt:
+        if key and raw.get("method") in METHODS[source] and title:
             by_url[url] = {"id": key, "source": source, "url": url, "title": title,
                            "excerpt": excerpt, "method": raw["method"],
                            "query": raw.get("query", ""),
@@ -58,12 +61,20 @@ def build_report(payload):
         matches = {}
         for url in candidate["evidence_urls"]:
             evidence = by_url.get(url)
-            if evidence:
+            if evidence and (discovery is None or evidence["method"] == "zhihu_api"):
                 matches.setdefault(evidence["id"], evidence)
         normalized = comparable(question)
         location = candidate.get("origin_location", "legacy")
+        seed_ids = candidate.get("seed_ids", [])
         if origin not in ("inferred", "explicit") or not normalized or not category or not matches:
             rejected.append({"question": question, "reason": "invalid_or_missing_evidence"})
+            continue
+        if normalized in seed_titles or any(seed not in seeds for seed in seed_ids):
+            reason = "seed_question" if normalized in seed_titles else "unknown_seed"
+            rejected.append({"question": question, "reason": reason})
+            continue
+        if origin == "inferred" and not any(item["excerpt"] for item in matches.values()):
+            rejected.append({"question": question, "reason": "missing_excerpt"})
             continue
         texts = {
             "legacy": ("title", "excerpt"), "title": ("title",),
@@ -76,16 +87,33 @@ def build_report(payload):
         if location == "comment":
             matching_texts = [comment for item in matches.values() for comment in item["comments"]]
         matched_text = next((value for value in matching_texts if normalized in comparable(value)), "")
+        original_question_url = ""
+        if origin == "explicit" and location == "title":
+            for item in matches.values():
+                parent = re.match(r"/question/(\d+)(?:/|$)", urlsplit(item["url"]).path)
+                title = re.sub(r"\s*[-–]\s*知乎$", "", item["title"])
+                if item["source"] == "zhihu" and parent and comparable(title) == normalized:
+                    original_question_url = f"https://www.zhihu.com/question/{parent[1]}"
+                    break
+        if discovery is not None and origin == "explicit" and not original_question_url:
+            rejected.append({"question": question, "reason": "zhihu_original_question_not_verified"})
+            continue
         if origin == "explicit" and not matched_text:
             rejected.append({"question": question, "reason": "explicit_text_not_found"})
             continue
-        key = comparable(category), normalized, comparable(context)
+        key = original_question_url if discovery is not None and original_question_url else (
+            comparable(category), normalized, comparable(context)
+        )
         entry = grouped.setdefault(key, {"question": question, "category": category,
                                          "origin": origin, "context": context, "evidence": {}})
         if origin == "explicit":
             entry["origin"] = origin
             entry["origin_location"] = location
             entry["question_evidence"] = matched_text
+        if original_question_url:
+            entry["original_question_url"] = original_question_url
+        if discovery is not None:
+            entry["seed_ids"] = list(dict.fromkeys(entry.get("seed_ids", []) + seed_ids))
         entry["evidence"].update(matches)
     questions = [
         {**entry, "evidence": list(entry["evidence"].values())}
@@ -102,7 +130,7 @@ def build_report(payload):
         ]
         if not row["mention_tags"]:
             row["mention_tags"] = ["未点名"]
-        if row.get("origin_location") == "title":
+        if row.get("origin_location") == "title" and "original_question_url" not in row:
             for item in row["evidence"]:
                 if item["source"] == "zhihu" and comparable(row["question"]) in comparable(item["title"]):
                     parent = re.match(r"/question/(\d+)(?:/|$)", urlsplit(item["url"]).path)
@@ -113,11 +141,17 @@ def build_report(payload):
     for item in by_url.values():
         counts.setdefault(item["source"], set()).add(item["id"])
     explicit_rows = [row for row in questions if row["origin"] == "explicit"]
-    return {"industry": industry, "sources": payload["sources"],
+    report = {"industry": industry, "sources": payload["sources"],
             "evidence_counts": {key: len(ids) for key, ids in counts.items()},
             "question_count": len(questions), "questions": questions, "rejected": rejected,
             "entities": entities, "question_counts_by_origin": dict(Counter(row["origin"] for row in questions)),
             "explicit_mention_counts": dict(Counter(tag for row in explicit_rows for tag in row["mention_tags"]))}
+    if discovery is not None:
+        report["discovery"] = discovery
+        report["new_questions_by_seed"] = {
+            seed: sum(seed in row["seed_ids"] for row in questions) for seed in seeds
+        }
+    return report
 
 
 def export(payload, destination):
@@ -128,8 +162,11 @@ def export(payload, destination):
     )
     with (destination / "questions.csv").open("w", encoding="utf-8-sig", newline="") as stream:
         writer = csv.writer(stream)
-        writer.writerow(["问题", "品类", "提取方式", "平台", "来源链接", "证据片段",
-                         "原问位置", "点名标签", "原问证据", "原提问链接", "对象上下文"])
+        columns = ["问题", "品类", "提取方式", "平台", "来源链接", "证据片段",
+                   "原问位置", "点名标签", "原问证据", "原提问链接", "对象上下文"]
+        if report.get("discovery", {}).get("mode") == "seed_expansion":
+            columns.append("关联种子编号")
+        writer.writerow(columns)
         for row in report["questions"]:
             evidence = row["evidence"]
             values = [
@@ -143,6 +180,8 @@ def export(payload, destination):
                 row.get("original_question_url", ""),
                 row["context"],
             ]
+            if "关联种子编号" in columns:
+                values.append(" / ".join(row["seed_ids"]))
             writer.writerow(map(csv_cell, values))
     return report
 

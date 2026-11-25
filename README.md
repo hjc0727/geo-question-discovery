@@ -1,6 +1,6 @@
 # GEO 品牌与行业问题发现 Skill
 
-输入品牌名称和产品或服务描述，或直接输入行业名。Skill 会从描述提取自然问法，扩展品牌及别名、已确认竞品及比较词，在知乎和小红书采集带来源的问题。仓库包含 Codex Skill、本地 MCP 连接器和测试。
+输入品牌名即可开始。Skill 会核实官网、产品服务和竞品，再调用知乎 API 采集问题。提供已有行业问题时，Skill 会沿种子扩搜，标明新增问题关联的种子。两种入口都输出带来源的 CSV。
 
 ## 使用
 
@@ -13,13 +13,9 @@
    uv run --locked python -m geo_connector.xhs_browser login
    ```
 
-5. 在 Codex 输入 `$geo-question-discovery 品牌：示例品牌；产品或服务描述：面向小团队的在线项目管理工具；目标：50 条`。品牌官网、别名、产品列表和目标数量可按需提供。也可输入 `$geo-question-discovery 服装`，或单独试跑站内搜索：
+5. 在 Codex 输入 `$geo-question-discovery 品牌：示例品牌`。也可补官网、产品服务、竞品和目标条数。提供种子问题时，例如 `$geo-question-discovery 品牌：示例品牌；种子问题：团队协作工具怎么迁移历史任务？`。
 
-   ```sh
-   uv run --locked python -m geo_connector.xhs_browser search "通勤白衬衫" "梨形牛仔裤" "冲锋衣软壳硬壳" --detail-limit 3 --comments
-   ```
-
-站内搜索读取浏览器可见的笔记。遇到登录、验证或访问限制时，工具会返回状态。采集证据可包含标题、摘要、正文和可见评论。问题清单区分平台原问与归纳问法，并标注原问位置、品牌或竞品点名和来源链接。
+这两种流程默认只查知乎。清单区分原题与归纳题，报告记录覆盖和来源。小红书浏览器工具可[单独使用](.agents/skills/geo-question-discovery/references/xiaohongshu-browser.md)。
 
 ## 测试
 

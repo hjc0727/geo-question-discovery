@@ -81,3 +81,34 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(report["questions"][0]["mention_tags"], ["未点名"])
         self.assertEqual(report["questions"][1]["mention_tags"], ["品牌点名", "竞品点名：乙牌"])
         self.assertEqual(report["rejected"][0]["reason"], "explicit_text_not_found")
+
+    def test_seed_expansion_excludes_seed_and_combines_zhihu_answers(self):
+        from geo_connector.report import build_report
+
+        first = "https://www.zhihu.com/question/1234/answer/9527"
+        second = "https://www.zhihu.com/question/1234/answer/9528"
+        seed = "团队协作工具怎么选？"
+        question = "团队协作工具怎么迁移历史任务？"
+        article = "https://zhuanlan.zhihu.com/p/1235"
+        evidence = [
+            {"url": url, "source": "zhihu", "method": "zhihu_api", "title": title}
+            for url, title in [(first, question + " - 知乎"), (second, question), (article, "文章标题是问句吗？")]
+        ]
+        candidates = [
+            {"question": title, "category": category, "origin": "explicit",
+             "origin_location": "title", "evidence_urls": [url], "seed_ids": [seed_id]}
+            for title, category, url, seed_id in [
+                (question, "迁移", first, "S01"), (question, "部署", second, "S02"),
+                (seed, "选型", first, "S01"), ("文章标题是问句吗？", "选型", article, "S01"),
+            ]
+        ]
+        report = build_report({
+            "industry": "协作软件", "sources": {}, "evidence": evidence, "questions": candidates,
+            "discovery": {"mode": "seed_expansion", "seeds": {"S01": seed, "S02": "怎么设置权限？"}},
+        })
+        row, = report["questions"]
+        self.assertEqual(row["seed_ids"], ["S01", "S02"])
+        self.assertEqual(row["original_question_url"], "https://www.zhihu.com/question/1234")
+        self.assertEqual(report["new_questions_by_seed"], {"S01": 1, "S02": 1})
+        self.assertEqual([item["reason"] for item in report["rejected"]],
+                         ["seed_question", "zhihu_original_question_not_verified"])
